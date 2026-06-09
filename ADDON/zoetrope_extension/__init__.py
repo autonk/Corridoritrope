@@ -673,6 +673,21 @@ class ZoetropeMappingItem(bpy.types.PropertyGroup):
         ],
         default='INTERPOLATE'
     )
+    use_custom_frame_range: bpy.props.BoolProperty(
+        name="Custom Frame Range",
+        description="Override automatic frame range detection",
+        default=False
+    )
+    frame_start: bpy.props.IntProperty(
+        name="Start Frame",
+        default=1,
+        min=1
+    )
+    frame_end: bpy.props.IntProperty(
+        name="End Frame",
+        default=24,
+        min=1
+    )
 def get_zoetrope_rpm(self):
     fps = bpy.context.scene.render.fps / bpy.context.scene.render.fps_base
     if self.mode == 'BASIC':
@@ -757,6 +772,21 @@ class ZoetropeGeneratorSettings(bpy.types.PropertyGroup):
         description="Directory to save the exported OBJ frames",
         subtype='DIR_PATH',
         default=""
+    )
+    use_export_frame_range: bpy.props.BoolProperty(
+        name="Use Frame Range",
+        description="Export a specific frame range instead of mapping to zoetrope frames",
+        default=False
+    )
+    export_frame_start: bpy.props.IntProperty(
+        name="Start",
+        default=1,
+        min=1
+    )
+    export_frame_end: bpy.props.IntProperty(
+        name="End",
+        default=24,
+        min=1
     )
     raw_mismatch_strategy: bpy.props.EnumProperty(
         name="Mismatch Strategy",
@@ -907,22 +937,34 @@ class OBJECT_OT_batch_zoetrope_baker(bpy.types.Operator):
             
         empties.sort(key=lambda x: x.name)
 
-        max_frame = 0
         valid_types = {'MESH', 'CURVE', 'SURFACE', 'META', 'FONT', 'VOLUME', 'POINTCLOUD'}
         exportable_objects = []
         for obj in anim_col.all_objects:
             if obj.type in valid_types:
                 exportable_objects.append(obj)
-            if obj.animation_data and obj.animation_data.action:
-                max_frame = max(max_frame, obj.animation_data.action.frame_range[1])
                 
         if not exportable_objects:
             self.report({'WARNING'}, f"No meshes found in {anim_col.name}!")
             return
 
-        if max_frame == 0:
-            self.report({'WARNING'}, f"No actions with keyframes found in {anim_col.name}!")
-            return
+        mapping_item = None
+        for item in context.scene.zoetrope_mappings:
+            if item.anim_collection == anim_col and item.target_zoetrope == target_zoetrope:
+                mapping_item = item
+                break
+                
+        if mapping_item and mapping_item.use_custom_frame_range:
+            start_frame = mapping_item.frame_start
+            max_frame = mapping_item.frame_end
+        else:
+            start_frame = 1
+            max_frame = 0
+            for obj in exportable_objects:
+                if obj.animation_data and obj.animation_data.action:
+                    max_frame = max(max_frame, obj.animation_data.action.frame_range[1])
+            if max_frame == 0:
+                self.report({'WARNING'}, f"No actions with keyframes found in {anim_col.name}! Defaulting to 24.")
+                max_frame = 24
 
         num_empties = len(empties)
         
@@ -973,10 +1015,11 @@ class OBJECT_OT_batch_zoetrope_baker(bpy.types.Operator):
             if empty_idx >= num_empties:
                 break
                 
+            anim_length = max_frame - start_frame + 1
             if mismatch_strategy == 'INTERPOLATE':
-                target_fbx_frame = 1 + (i / max(1, loop_count - 1)) * (max_frame - 1)
+                target_fbx_frame = start_frame + (i / max(1, loop_count - 1)) * (anim_length - 1)
             else:
-                target_fbx_frame = i + 1
+                target_fbx_frame = start_frame + i
                 
             context.scene.frame_set(int(target_fbx_frame))
             context.view_layer.update()
@@ -1080,22 +1123,34 @@ class OBJECT_OT_export_zoetrope_frames(bpy.types.Operator):
             
         empties.sort(key=lambda x: x.name)
 
-        max_frame = 0
         valid_types = {'MESH', 'CURVE', 'SURFACE', 'META', 'FONT', 'VOLUME', 'POINTCLOUD'}
         exportable_objects = []
         for obj in anim_col.all_objects:
             if obj.type in valid_types:
                 exportable_objects.append(obj)
-            if obj.animation_data and obj.animation_data.action:
-                max_frame = max(max_frame, obj.animation_data.action.frame_range[1])
                 
         if not exportable_objects:
             self.report({'WARNING'}, f"No exportable objects found in {anim_col.name}!")
             return
 
-        if max_frame == 0:
-            self.report({'WARNING'}, f"No actions with keyframes found in {anim_col.name}! Defaulting to 24 frames.")
-            max_frame = 24
+        mapping_item = None
+        for item in context.scene.zoetrope_mappings:
+            if item.anim_collection == anim_col and item.target_zoetrope == target_zoetrope:
+                mapping_item = item
+                break
+                
+        if mapping_item and mapping_item.use_custom_frame_range:
+            start_frame = mapping_item.frame_start
+            max_frame = mapping_item.frame_end
+        else:
+            start_frame = 1
+            max_frame = 0
+            for obj in exportable_objects:
+                if obj.animation_data and obj.animation_data.action:
+                    max_frame = max(max_frame, obj.animation_data.action.frame_range[1])
+            if max_frame == 0:
+                self.report({'WARNING'}, f"No actions with keyframes found in {anim_col.name}! Defaulting to 24 frames.")
+                max_frame = 24
 
         num_empties = len(empties)
         
@@ -1125,6 +1180,10 @@ class OBJECT_OT_export_zoetrope_frames(bpy.types.Operator):
             start_empty_idx = 0
             loop_count = num_empties
 
+        settings = context.scene.zoetrope_generator
+        if settings.use_export_frame_range:
+            loop_count = settings.export_frame_end - settings.export_frame_start + 1
+            
         context.window_manager.progress_begin(0, loop_count)
         
         # Deselect all
@@ -1132,14 +1191,18 @@ class OBJECT_OT_export_zoetrope_frames(bpy.types.Operator):
 
         import os
         for i in range(loop_count):
-            empty_idx = start_empty_idx + i
-            if empty_idx >= num_empties:
-                break
-                
-            if mismatch_strategy == 'INTERPOLATE':
-                target_fbx_frame = 1 + (i / max(1, loop_count - 1)) * (max_frame - 1)
+            if settings.use_export_frame_range:
+                target_fbx_frame = settings.export_frame_start + i
             else:
-                target_fbx_frame = i + 1
+                empty_idx = start_empty_idx + i
+                if empty_idx >= num_empties:
+                    break
+                    
+                anim_length = max_frame - start_frame + 1
+                if mismatch_strategy == 'INTERPOLATE':
+                    target_fbx_frame = start_frame + (i / max(1, loop_count - 1)) * (anim_length - 1)
+                else:
+                    target_fbx_frame = start_frame + i
                 
             context.scene.frame_set(int(target_fbx_frame))
             context.view_layer.update()
@@ -1653,6 +1716,11 @@ class VIEW3D_PT_zoetrope_baker(bpy.types.Panel):
                 box = layout.box()
                 box.label(text="Export to OBJ", icon='EXPORT')
                 box.prop(settings, "export_dir")
+                box.prop(settings, "use_export_frame_range")
+                if settings.use_export_frame_range:
+                    row = box.row(align=True)
+                    row.prop(settings, "export_frame_start")
+                    row.prop(settings, "export_frame_end")
                 row = box.row()
                 row.scale_y = 1.5
                 row.operator("object.export_zoetrope_frames", icon='MESH_DATA', text="Export Frames")
@@ -1687,6 +1755,12 @@ class VIEW3D_PT_zoetrope_baker(bpy.types.Panel):
                         if int(max_frame) != empties_count and empties_count > 0 and max_frame > 0:
                             map_box.label(text=f"Mismatch: {int(max_frame)} anim vs {empties_count} frames", icon='ERROR')
                             map_box.prop(item, "mismatch_strategy")
+                            
+                        map_box.prop(item, "use_custom_frame_range")
+                        if item.use_custom_frame_range:
+                            row = map_box.row(align=True)
+                            row.prop(item, "frame_start")
+                            row.prop(item, "frame_end")
                 
                 layout.separator()
                 row = layout.row()
@@ -1697,6 +1771,11 @@ class VIEW3D_PT_zoetrope_baker(bpy.types.Panel):
                 box = layout.box()
                 box.label(text="Export to OBJ", icon='EXPORT')
                 box.prop(settings, "export_dir")
+                box.prop(settings, "use_export_frame_range")
+                if settings.use_export_frame_range:
+                    row = box.row(align=True)
+                    row.prop(settings, "export_frame_start")
+                    row.prop(settings, "export_frame_end")
                 row = box.row()
                 row.scale_y = 1.5
                 row.operator("object.export_zoetrope_frames", icon='MESH_DATA', text="Export Frames")
