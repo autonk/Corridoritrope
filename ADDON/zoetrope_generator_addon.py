@@ -1872,6 +1872,12 @@ def register():
         subtype='TRANSLATION',
         update=update_live_settings
     )
+    bpy.types.Collection.zoe_frame_offset = bpy.props.IntProperty(
+        name="Frame Offset",
+        description="Offset the animation playback by N frames",
+        default=0,
+        update=update_live_settings
+    )
     bpy.types.Collection.zoe_invert = bpy.props.BoolProperty(
         name="Invert Animation",
         description="Spins the zoetrope counter-clockwise and maps frames in reverse",
@@ -1889,6 +1895,7 @@ def unregister():
     del bpy.types.Collection.zoe_rot_z
     del bpy.types.Collection.zoe_scale
     del bpy.types.Collection.zoe_offset
+    del bpy.types.Collection.zoe_frame_offset
     del bpy.types.Collection.zoe_invert
 
 if __name__ == "__main__":
