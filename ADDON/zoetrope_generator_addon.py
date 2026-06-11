@@ -128,11 +128,12 @@ class ZOETROPE_OT_update_self(bpy.types.Operator):
         if not success:
             self.report({'ERROR'}, f"Update failed: {msg}")
         else:
-            self.report({'INFO'}, msg)
-            def draw(self, context):
-                self.layout.label(text="Update Downloaded successfully!")
-                self.layout.label(text="Please restart Blender for the changes to take effect.", icon='INFO')
-            bpy.context.window_manager.popup_menu(draw, title="Zoetrope Updater", icon='INFO')
+            try:
+                bpy.ops.wm.save_mainfile()
+                bpy.ops.script.reload()
+                self.report({'INFO'}, "Update installed and reloaded successfully!")
+            except Exception as e:
+                self.report({'WARNING'}, f"Update installed, but failed to reload automatically: {e}")
         return {'FINISHED'}
 
 class ZOETROPE_OT_check_updates(bpy.types.Operator):
