@@ -705,6 +705,11 @@ class ZoetropeMappingItem(bpy.types.PropertyGroup):
         default=24,
         min=1
     )
+    custom_origin: bpy.props.PointerProperty(
+        name="Custom Origin",
+        type=bpy.types.Object,
+        description="Select an object (like an Empty) to act as the true center (origin) of the animation when exported or baked"
+    )
 def get_zoetrope_rpm(self):
     fps = bpy.context.scene.render.fps / bpy.context.scene.render.fps_base
     if self.mode == 'BASIC':
@@ -1086,6 +1091,10 @@ class OBJECT_OT_batch_zoetrope_baker(bpy.types.Operator):
             empty = empties[empty_idx]
             if empty:
                 orig_matrix = combined.matrix_world.copy()
+                if mapping_item and mapping_item.custom_origin:
+                    o_mat_inv = mapping_item.custom_origin.matrix_world.inverted()
+                    orig_matrix = o_mat_inv @ orig_matrix
+                    
                 combined.parent = empty
                 combined.matrix_parent_inverse = mathutils.Matrix.Identity(4)
                 combined.matrix_local = orig_matrix
@@ -1241,7 +1250,13 @@ class OBJECT_OT_export_zoetrope_frames(bpy.types.Operator):
                             inst.object.to_mesh_clear()
                             
                             new_obj = bpy.data.objects.new(f"Temp_Export_{m.name}", real_mesh)
-                            new_obj.matrix_world = inst.matrix_world.copy()
+                            
+                            if mapping_item and mapping_item.custom_origin:
+                                o_mat_inv = mapping_item.custom_origin.matrix_world.inverted()
+                                new_obj.matrix_world = o_mat_inv @ inst.matrix_world.copy()
+                            else:
+                                new_obj.matrix_world = inst.matrix_world.copy()
+                                
                             context.scene.collection.objects.link(new_obj)
                             
                             # Ensure vertex colors are active so OBJ exporter picks them up
@@ -1433,6 +1448,10 @@ class OBJECT_OT_import_zoetrope_frames(bpy.types.Operator):
             empty = empties[empty_idx]
             if empty:
                 orig_matrix = combined.matrix_world.copy()
+                if mapping_item and mapping_item.custom_origin:
+                    o_mat_inv = mapping_item.custom_origin.matrix_world.inverted()
+                    orig_matrix = o_mat_inv @ orig_matrix
+                    
                 combined.parent = empty
                 combined.matrix_parent_inverse = mathutils.Matrix.Identity(4)
                 combined.matrix_local = orig_matrix
@@ -1778,6 +1797,8 @@ class VIEW3D_PT_zoetrope_baker(bpy.types.Panel):
                             row = map_box.row(align=True)
                             row.prop(item, "frame_start")
                             row.prop(item, "frame_end")
+                            
+                        map_box.prop(item, "custom_origin")
                 
                 layout.separator()
                 row = layout.row()
