@@ -1670,6 +1670,7 @@ class VIEW3D_PT_zoetrope_settings(bpy.types.Panel):
             col = box.column(align=True)
             col.prop(zoe, "zoe_rot_z")
             col.prop(zoe, "zoe_scale")
+            col.prop(zoe, "zoe_offset")
             col.prop(zoe, "zoe_invert", toggle=True)
             
             if zoe.get('zoe_type') == 'BASIC':
