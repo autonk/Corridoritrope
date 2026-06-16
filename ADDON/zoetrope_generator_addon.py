@@ -1261,7 +1261,14 @@ class OBJECT_OT_export_zoetrope_frames(bpy.types.Operator):
                             
                             # Ensure vertex colors are active so OBJ exporter picks them up
                             if hasattr(real_mesh, 'color_attributes') and real_mesh.color_attributes:
-                                real_mesh.color_attributes.active_color = real_mesh.color_attributes[0]
+                                render_color = real_mesh.color_attributes.render_color
+                                active_color = real_mesh.color_attributes.active_color
+                                if render_color:
+                                    real_mesh.color_attributes.active_color = render_color
+                                elif active_color:
+                                    pass  # Already set
+                                else:
+                                    real_mesh.color_attributes.active_color = real_mesh.color_attributes[0]
                             elif hasattr(real_mesh, 'vertex_colors') and real_mesh.vertex_colors:
                                 real_mesh.vertex_colors.active_index = 0
                             
