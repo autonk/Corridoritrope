@@ -611,6 +611,16 @@ def update_baker_source(self, context):
         item = context.scene.zoetrope_mappings.add()
         item.anim_collection = anim_parent
 
+def get_eff_frames(self):
+    base = self.get('zoe_frames', 1) if self.get('zoe_type') == 'BASIC' else self.get('zoe_planets', 1) * self.get('zoe_subframes', 1)
+    if self.zoe_speed_mult == 0: return 0.0
+    return base / self.zoe_speed_mult
+
+def set_eff_frames(self, value):
+    if value <= 0: return
+    base = self.get('zoe_frames', 1) if self.get('zoe_type') == 'BASIC' else self.get('zoe_planets', 1) * self.get('zoe_subframes', 1)
+    self.zoe_speed_mult = base / value
+
 def update_live_settings(self, context):
     col = self
     empties = [obj for obj in col.all_objects if obj.name.startswith("Frame_") and obj.type == 'EMPTY']
@@ -622,10 +632,10 @@ def update_live_settings(self, context):
         empty.delta_rotation_euler[2] = col.zoe_rot_z
         empty.delta_location = col.zoe_offset
         
-    # Apply Invert
+    # Apply Invert and Speed Multiplier
     root_obj = empties[0].parent
     if root_obj and 'base_driver_expr' in root_obj:
-        expr = root_obj['base_driver_expr']
+        expr = f"({root_obj['base_driver_expr']}) * {col.zoe_speed_mult}"
         
         # Modify driver
         if root_obj.animation_data and root_obj.animation_data.drivers:
@@ -793,6 +803,22 @@ class ZoetropeGeneratorSettings(bpy.types.PropertyGroup):
         subtype='DIR_PATH',
         default=""
     )
+    export_up_axis: bpy.props.EnumProperty(
+        name="Up",
+        items=[
+            ('X', "X", ""), ('Y', "Y", ""), ('Z', "Z", ""),
+            ('-X', "-X", ""), ('-Y', "-Y", ""), ('-Z', "-Z", "")
+        ],
+        default='Y'
+    )
+    export_forward_axis: bpy.props.EnumProperty(
+        name="Forward",
+        items=[
+            ('X', "X", ""), ('Y', "Y", ""), ('Z', "Z", ""),
+            ('-X', "-X", ""), ('-Y', "-Y", ""), ('-Z', "-Z", "")
+        ],
+        default='-Z'
+    )
     use_export_frame_range: bpy.props.BoolProperty(
         name="Use Frame Range",
         description="Export a specific frame range instead of mapping to zoetrope frames",
@@ -934,12 +960,15 @@ class OBJECT_OT_batch_zoetrope_baker(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
+        processed_zoetropes = set()
         count = 0
         for item in context.scene.zoetrope_mappings:
             if not item.target_zoetrope or not item.anim_collection:
                 continue
             
-            self.bake_single_mapping(context, item.anim_collection, item.target_zoetrope, item.mismatch_strategy)
+            clear_baked = item.target_zoetrope.name not in processed_zoetropes
+            self.bake_single_mapping(context, item.anim_collection, item.target_zoetrope, item.mismatch_strategy, clear_baked)
+            processed_zoetropes.add(item.target_zoetrope.name)
             count += 1
             
         if count == 0:
@@ -949,7 +978,7 @@ class OBJECT_OT_batch_zoetrope_baker(bpy.types.Operator):
         self.report({'INFO'}, f"Batch baked {count} animations successfully!")
         return {'FINISHED'}
         
-    def bake_single_mapping(self, context, anim_col, target_zoetrope, mismatch_strategy):
+    def bake_single_mapping(self, context, anim_col, target_zoetrope, mismatch_strategy, clear_baked=True):
         empties = [obj for obj in target_zoetrope.all_objects if obj.name.startswith("Frame_") and obj.type == 'EMPTY']
         if not empties:
             self.report({'WARNING'}, f"No 'Frame_XXX' empties found in {target_zoetrope.name}!")
@@ -1010,8 +1039,9 @@ class OBJECT_OT_batch_zoetrope_baker(bpy.types.Operator):
                 break
                 
         if baked_collection:
-            for obj in list(baked_collection.objects):
-                bpy.data.objects.remove(obj, do_unlink=True)
+            if clear_baked:
+                for obj in list(baked_collection.objects):
+                    bpy.data.objects.remove(obj, do_unlink=True)
         else:
             baked_collection = bpy.data.collections.new("Baked_Frames")
             target_zoetrope.children.link(baked_collection)
@@ -1045,8 +1075,25 @@ class OBJECT_OT_batch_zoetrope_baker(bpy.types.Operator):
             context.view_layer.update()
             depsgraph = context.evaluated_depsgraph_get()
             
+            # Determine which collections have counteract enabled
+            counteract_collections = set()
+            def find_counteracts(col_iter, current_state):
+                state = current_state or getattr(col_iter, "zoe_counteract_mult", False)
+                if state:
+                    counteract_collections.add(col_iter.name)
+                for child in col_iter.children:
+                    find_counteracts(child, state)
+            find_counteracts(anim_col, False)
+            
             baked_meshes = []
             for m in exportable_objects:
+                # Check if this specific object needs counteract
+                needs_counteract = False
+                for c in m.users_collection:
+                    if c.name in counteract_collections:
+                        needs_counteract = True
+                        break
+                        
                 for inst in depsgraph.object_instances:
                     is_match = False
                     if inst.object.original.name == m.name:
@@ -1062,13 +1109,53 @@ class OBJECT_OT_batch_zoetrope_baker(bpy.types.Operator):
                             
                             new_obj = bpy.data.objects.new(f"Baked_{i+1:03d}_{m.name}", real_mesh)
                             new_obj.matrix_world = inst.matrix_world.copy()
-                            baked_collection.objects.link(new_obj)
+                            new_obj["needs_counteract"] = needs_counteract
                             
                             if hasattr(inst.object.data, 'materials'):
                                 for mat in inst.object.data.materials:
                                     if mat and mat.name not in real_mesh.materials:
                                         real_mesh.materials.append(mat)
                                         
+                            # Pre-apply counteract rotation BEFORE joining
+                            if needs_counteract:
+                                zoe = target_zoetrope
+                                speed_mult = getattr(zoe, "zoe_speed_mult", 1.0)
+                                if speed_mult != 1.0:
+                                    base_frames = zoe.get('zoe_frames', 1) if zoe.get('zoe_type') == 'BASIC' else zoe.get('zoe_planets', 1) * zoe.get('zoe_subframes', 1)
+                                    if base_frames > 0:
+                                        import math
+                                        drift_angle = empty_idx * (speed_mult - 1.0) * (2 * math.pi / base_frames)
+                                        root_obj = empties[0].parent
+                                        if root_obj:
+                                            is_inverted = getattr(zoe, "zoe_invert", False)
+                                            rot_sign = -1 if is_inverted else 1
+                                            
+                                            num_copies = max(1, int(math.ceil(abs(speed_mult))))
+                                            
+                                            template_obj = bpy.data.objects.get("Frame_Template")
+                                            t_mat = template_obj.matrix_world if template_obj else mathutils.Matrix.Identity(4)
+                                            t_inv = t_mat.inverted()
+                                            
+                                            for k in range(num_copies):
+                                                if k == 0:
+                                                    obj_to_transform = new_obj
+                                                else:
+                                                    copy_mesh = real_mesh.copy()
+                                                    obj_to_transform = bpy.data.objects.new(f"Baked_{i+1:03d}_{m.name}_copy{k}", copy_mesh)
+                                                    obj_to_transform.matrix_world = inst.matrix_world.copy()
+                                                    obj_to_transform["needs_counteract"] = needs_counteract
+                                                    baked_collection.objects.link(obj_to_transform)
+                                                    baked_meshes.append(obj_to_transform)
+                                                    
+                                                offset_angle = k * (2 * math.pi / base_frames)
+                                                rot_mat = mathutils.Matrix.Rotation(rot_sign * (drift_angle - offset_angle), 4, 'Z')
+                                                zoe_rot = root_obj.matrix_world @ rot_mat @ root_obj.matrix_world.inverted()
+                                                
+                                                pre_transform = t_mat @ empties[empty_idx].matrix_world.inverted() @ zoe_rot @ empties[empty_idx].matrix_world @ t_inv
+                                                
+                                                obj_to_transform.matrix_world = pre_transform @ obj_to_transform.matrix_world
+                                            
+                            baked_collection.objects.link(new_obj)
                             baked_meshes.append(new_obj)
                         except Exception:
                             pass
@@ -1090,6 +1177,7 @@ class OBJECT_OT_batch_zoetrope_baker(bpy.types.Operator):
             if empty:
                 orig_matrix = combined.matrix_world.copy()
                 template_obj = bpy.data.objects.get("Frame_Template")
+                
                 if template_obj:
                     o_mat_inv = template_obj.matrix_world.inverted()
                     orig_matrix = o_mat_inv @ orig_matrix
@@ -1261,16 +1349,24 @@ class OBJECT_OT_export_zoetrope_frames(bpy.types.Operator):
                             
                             # Ensure vertex colors are active so OBJ exporter picks them up
                             if hasattr(real_mesh, 'color_attributes') and real_mesh.color_attributes:
-                                render_color = real_mesh.color_attributes.render_color
-                                active_color = real_mesh.color_attributes.active_color
-                                if render_color:
-                                    real_mesh.color_attributes.active_color = render_color
-                                elif active_color:
-                                    pass  # Already set
-                                else:
-                                    real_mesh.color_attributes.active_color = real_mesh.color_attributes[0]
+                                if "PRINTCOLOR" not in real_mesh.color_attributes:
+                                    target_color = real_mesh.color_attributes.render_color or real_mesh.color_attributes.active_color or real_mesh.color_attributes[0]
+                                    if target_color:
+                                        target_color.name = "PRINTCOLOR"
+                                
+                                printcolor_attr = real_mesh.color_attributes.get("PRINTCOLOR")
+                                if printcolor_attr:
+                                    real_mesh.color_attributes.active_color = printcolor_attr
                             elif hasattr(real_mesh, 'vertex_colors') and real_mesh.vertex_colors:
-                                real_mesh.vertex_colors.active_index = 0
+                                if "PRINTCOLOR" not in real_mesh.vertex_colors:
+                                    target_color = real_mesh.vertex_colors.active or real_mesh.vertex_colors[0]
+                                    if target_color:
+                                        target_color.name = "PRINTCOLOR"
+                                        
+                                if "PRINTCOLOR" in real_mesh.vertex_colors:
+                                    real_mesh.vertex_colors.active_index = real_mesh.vertex_colors.keys().index("PRINTCOLOR") if "PRINTCOLOR" in real_mesh.vertex_colors.keys() else 0
+                                else:
+                                    real_mesh.vertex_colors.active_index = 0
                             
                             if hasattr(inst.object.data, 'materials'):
                                 for mat in inst.object.data.materials:
@@ -1297,13 +1393,13 @@ class OBJECT_OT_export_zoetrope_frames(bpy.types.Operator):
                 try:
                     # Blender 3.2+ new C++ exporter
                     try:
-                        bpy.ops.wm.obj_export(filepath=out_path, export_selected_objects=True, export_colors=True, export_triangulated_mesh=True)
+                        bpy.ops.wm.obj_export(filepath=out_path, export_selected_objects=True, export_colors=True, export_triangulated_mesh=True, up_axis=settings.export_up_axis, forward_axis=settings.export_forward_axis)
                     except TypeError:
                         # Fallback if export_colors or export_triangulated_mesh is unrecognized
-                        bpy.ops.wm.obj_export(filepath=out_path, export_selected_objects=True)
+                        bpy.ops.wm.obj_export(filepath=out_path, export_selected_objects=True, up_axis=settings.export_up_axis, forward_axis=settings.export_forward_axis)
                 except AttributeError:
                     # Fallback to old python exporter (pre-3.2)
-                    bpy.ops.export_scene.obj(filepath=out_path, use_selection=True, use_triangles=True)
+                    bpy.ops.export_scene.obj(filepath=out_path, use_selection=True, use_triangles=True, axis_up=settings.export_up_axis, axis_forward=settings.export_forward_axis)
             except Exception as e:
                 self.report({'ERROR'}, f"Failed to export OBJ {out_path}: {e}")
                 print(f"Export Error: {e}")
@@ -1679,6 +1775,8 @@ class VIEW3D_PT_zoetrope_settings(bpy.types.Panel):
             col.prop(zoe, "zoe_rot_z")
             col.prop(zoe, "zoe_scale")
             col.prop(zoe, "zoe_offset")
+            col.prop(zoe, "zoe_speed_mult")
+            col.prop(zoe, "zoe_eff_frames", icon='TIME')
             col.prop(zoe, "zoe_invert", toggle=True)
             
             if zoe.get('zoe_type') == 'BASIC':
@@ -1761,6 +1859,9 @@ class VIEW3D_PT_zoetrope_baker(bpy.types.Panel):
                 box = layout.box()
                 box.label(text="Export to OBJ", icon='EXPORT')
                 box.prop(settings, "export_dir")
+                row_axis = box.row(align=True)
+                row_axis.prop(settings, "export_forward_axis")
+                row_axis.prop(settings, "export_up_axis")
                 box.prop(settings, "use_export_frame_range")
                 if settings.use_export_frame_range:
                     row = box.row(align=True)
@@ -1801,6 +1902,22 @@ class VIEW3D_PT_zoetrope_baker(bpy.types.Panel):
                             map_box.label(text=f"Mismatch: {int(max_frame)} anim vs {empties_count} frames", icon='ERROR')
                             map_box.prop(item, "mismatch_strategy")
                             
+                        if item.target_zoetrope and getattr(item.target_zoetrope, "zoe_speed_mult", 1.0) != 1.0:
+                            map_box.label(text="Counteract Speed Multiplier for:", icon='CON_ROTLIKE')
+                            sub_box = map_box.box()
+                            
+                            def draw_subcols(col_to_draw, layout_col, level=0):
+                                row = layout_col.row()
+                                if level > 0:
+                                    row.label(text="    " * level + "↳ " + col_to_draw.name)
+                                else:
+                                    row.label(text=col_to_draw.name, icon='GROUP')
+                                row.prop(col_to_draw, "zoe_counteract_mult", text="")
+                                for child in col_to_draw.children:
+                                    draw_subcols(child, layout_col, level + 1)
+                                    
+                            draw_subcols(item.anim_collection, sub_box)
+                            
                         map_box.prop(item, "use_custom_frame_range")
                         if item.use_custom_frame_range:
                             row = map_box.row(align=True)
@@ -1816,6 +1933,9 @@ class VIEW3D_PT_zoetrope_baker(bpy.types.Panel):
                 box = layout.box()
                 box.label(text="Export to OBJ", icon='EXPORT')
                 box.prop(settings, "export_dir")
+                row_axis = box.row(align=True)
+                row_axis.prop(settings, "export_forward_axis")
+                row_axis.prop(settings, "export_up_axis")
                 box.prop(settings, "use_export_frame_range")
                 if settings.use_export_frame_range:
                     row = box.row(align=True)
@@ -1874,12 +1994,30 @@ def register():
         update=update_live_settings
     )
     bpy.types.Collection.zoe_offset = bpy.props.FloatVectorProperty(
-        name="Local Offset",
-        description="Offset the animation instances",
+        name="Global Offset",
         default=(0.0, 0.0, 0.0),
         subtype='TRANSLATION',
         update=update_live_settings
     )
+    bpy.types.Collection.zoe_speed_mult = bpy.props.FloatProperty(
+        name="Speed Multiplier",
+        default=1.0,
+        description="Multiply the rotation speed. To stretch a 16 frame zoetrope to 24 frames, type 16/24",
+        update=update_live_settings
+    )
+    bpy.types.Collection.zoe_eff_frames = bpy.props.FloatProperty(
+        name="Revolution Frames",
+        description="Target frames for 1 full revolution. Dynamically adjusts the Speed Multiplier",
+        get=get_eff_frames,
+        set=set_eff_frames
+    )
+    bpy.types.Collection.zoe_counteract_mult = bpy.props.BoolProperty(
+        name="Counteract Speed Multiplier",
+        description="Rotates objects backwards during baking to perfectly counteract the zoetrope's speed multiplier, making them appear still",
+        default=False
+    )
+    
+    # Store settings for checking validity
     bpy.types.Collection.zoe_frame_offset = bpy.props.IntProperty(
         name="Frame Offset",
         description="Offset the animation playback by N frames",
@@ -1903,6 +2041,9 @@ def unregister():
     del bpy.types.Collection.zoe_rot_z
     del bpy.types.Collection.zoe_scale
     del bpy.types.Collection.zoe_offset
+    del bpy.types.Collection.zoe_speed_mult
+    del bpy.types.Collection.zoe_eff_frames
+    del bpy.types.Collection.zoe_counteract_mult
     del bpy.types.Collection.zoe_frame_offset
     del bpy.types.Collection.zoe_invert
 
