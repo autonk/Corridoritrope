@@ -623,14 +623,17 @@ def set_eff_frames(self, value):
 
 def update_live_settings(self, context):
     col = self
-    empties = [obj for obj in col.all_objects if obj.name.startswith("Frame_") and obj.type == 'EMPTY']
+    empties = [obj for obj in col.all_objects if ("Frame_" in obj.name or "Slot" in obj.name) and obj.type == 'EMPTY']
     if not empties: return
     
     # Apply Scale, Rotation, and Offset via Delta Transforms
     for empty in empties:
         empty.delta_scale = (col.zoe_scale, col.zoe_scale, col.zoe_scale)
         empty.delta_rotation_euler[2] = col.zoe_rot_z
-        empty.delta_location = col.zoe_offset
+        
+        # Convert local offset to parent space based on the empty's base rotation
+        rot_mat = empty.rotation_euler.to_matrix()
+        empty.delta_location = rot_mat @ Vector(col.zoe_offset)
         
     # Apply Invert and Speed Multiplier
     root_obj = empties[0].parent
@@ -979,7 +982,7 @@ class OBJECT_OT_batch_zoetrope_baker(bpy.types.Operator):
         return {'FINISHED'}
         
     def bake_single_mapping(self, context, anim_col, target_zoetrope, mismatch_strategy, clear_baked=True):
-        empties = [obj for obj in target_zoetrope.all_objects if obj.name.startswith("Frame_") and obj.type == 'EMPTY']
+        empties = [obj for obj in target_zoetrope.all_objects if ("Frame_" in obj.name or "Slot" in obj.name) and obj.type == 'EMPTY']
         if not empties:
             self.report({'WARNING'}, f"No 'Frame_XXX' empties found in {target_zoetrope.name}!")
             return
@@ -1085,80 +1088,93 @@ class OBJECT_OT_batch_zoetrope_baker(bpy.types.Operator):
                     find_counteracts(child, state)
             find_counteracts(anim_col, False)
             
-            baked_meshes = []
+            import tempfile
+            import os
+            
+            temp_dir = tempfile.gettempdir()
+            temp_obj_path = os.path.join(temp_dir, f"zoetrope_bake_{i}.obj")
+            
+            bpy.ops.object.select_all(action='DESELECT')
             for m in exportable_objects:
-                # Check if this specific object needs counteract
+                m.hide_viewport = False
+                m.select_set(True)
+                
+            bpy.ops.wm.obj_export(
+                filepath=temp_obj_path,
+                export_selected_objects=True,
+                export_uv=True,
+                export_normals=True,
+                export_colors=True,
+                export_materials=False,
+                export_triangulated_mesh=True,
+                export_animation=False,
+                apply_modifiers=True,
+                export_eval_mode='DAG_EVAL_VIEWPORT'
+            )
+            
+            bpy.ops.object.select_all(action='DESELECT')
+            bpy.ops.wm.obj_import(filepath=temp_obj_path)
+            
+            baked_meshes = context.selected_objects
+            
+            for new_obj in baked_meshes:
+                # Find original object to check counteract
+                orig_name = new_obj.name.split('.')[0]
                 needs_counteract = False
-                for c in m.users_collection:
-                    if c.name in counteract_collections:
-                        needs_counteract = True
+                for m in exportable_objects:
+                    if orig_name in m.name or m.name in orig_name:
+                        for c in m.users_collection:
+                            if c.name in counteract_collections:
+                                needs_counteract = True
+                                break
                         break
                         
-                for inst in depsgraph.object_instances:
-                    is_match = False
-                    if inst.object.original.name == m.name:
-                        is_match = True
-                    elif inst.parent and inst.parent.original.name == m.name:
-                        is_match = True
-                        
-                    if is_match and inst.object.type == 'MESH':
-                        try:
-                            eval_mesh = inst.object.to_mesh(preserve_all_data_layers=True, depsgraph=depsgraph)
-                            real_mesh = eval_mesh.copy()
-                            inst.object.to_mesh_clear()
-                            
-                            new_obj = bpy.data.objects.new(f"Baked_{i+1:03d}_{m.name}", real_mesh)
-                            new_obj.matrix_world = inst.matrix_world.copy()
-                            new_obj["needs_counteract"] = needs_counteract
-                            
-                            if hasattr(inst.object.data, 'materials'):
-                                for mat in inst.object.data.materials:
-                                    if mat and mat.name not in real_mesh.materials:
-                                        real_mesh.materials.append(mat)
+                new_obj.name = f"Baked_{i+1:03d}_{orig_name}"
+                new_obj["needs_counteract"] = needs_counteract
+                
+                # Pre-apply counteract rotation BEFORE joining
+                if needs_counteract:
+                    zoe = target_zoetrope
+                    speed_mult = getattr(zoe, "zoe_speed_mult", 1.0)
+                    if speed_mult != 1.0:
+                        base_frames = zoe.get('zoe_frames', 1) if zoe.get('zoe_type') == 'BASIC' else zoe.get('zoe_planets', 1) * zoe.get('zoe_subframes', 1)
+                        if base_frames > 0:
+                            import math
+                            drift_angle = empty_idx * (speed_mult - 1.0) * (2 * math.pi / base_frames)
+                            root_obj = empties[0].parent
+                            if root_obj:
+                                is_inverted = getattr(zoe, "zoe_invert", False)
+                                rot_sign = -1 if is_inverted else 1
+                                
+                                num_copies = max(1, int(math.ceil(abs(speed_mult))))
+                                
+                                template_obj = bpy.data.objects.get("Frame_Template")
+                                t_mat = template_obj.matrix_world if template_obj else mathutils.Matrix.Identity(4)
+                                t_inv = t_mat.inverted()
+                                
+                                for k in range(num_copies):
+                                    if k == 0:
+                                        obj_to_transform = new_obj
+                                    else:
+                                        copy_mesh = new_obj.data.copy()
+                                        obj_to_transform = bpy.data.objects.new(f"{new_obj.name}_copy{k}", copy_mesh)
+                                        obj_to_transform.matrix_world = new_obj.matrix_world.copy()
+                                        obj_to_transform["needs_counteract"] = needs_counteract
+                                        context.scene.collection.objects.link(obj_to_transform)
+                                        baked_meshes.append(obj_to_transform)
                                         
-                            # Pre-apply counteract rotation BEFORE joining
-                            if needs_counteract:
-                                zoe = target_zoetrope
-                                speed_mult = getattr(zoe, "zoe_speed_mult", 1.0)
-                                if speed_mult != 1.0:
-                                    base_frames = zoe.get('zoe_frames', 1) if zoe.get('zoe_type') == 'BASIC' else zoe.get('zoe_planets', 1) * zoe.get('zoe_subframes', 1)
-                                    if base_frames > 0:
-                                        import math
-                                        drift_angle = empty_idx * (speed_mult - 1.0) * (2 * math.pi / base_frames)
-                                        root_obj = empties[0].parent
-                                        if root_obj:
-                                            is_inverted = getattr(zoe, "zoe_invert", False)
-                                            rot_sign = -1 if is_inverted else 1
-                                            
-                                            num_copies = max(1, int(math.ceil(abs(speed_mult))))
-                                            
-                                            template_obj = bpy.data.objects.get("Frame_Template")
-                                            t_mat = template_obj.matrix_world if template_obj else mathutils.Matrix.Identity(4)
-                                            t_inv = t_mat.inverted()
-                                            
-                                            for k in range(num_copies):
-                                                if k == 0:
-                                                    obj_to_transform = new_obj
-                                                else:
-                                                    copy_mesh = real_mesh.copy()
-                                                    obj_to_transform = bpy.data.objects.new(f"Baked_{i+1:03d}_{m.name}_copy{k}", copy_mesh)
-                                                    obj_to_transform.matrix_world = inst.matrix_world.copy()
-                                                    obj_to_transform["needs_counteract"] = needs_counteract
-                                                    baked_collection.objects.link(obj_to_transform)
-                                                    baked_meshes.append(obj_to_transform)
-                                                    
-                                                offset_angle = k * (2 * math.pi / base_frames)
-                                                rot_mat = mathutils.Matrix.Rotation(rot_sign * (drift_angle - offset_angle), 4, 'Z')
-                                                zoe_rot = root_obj.matrix_world @ rot_mat @ root_obj.matrix_world.inverted()
-                                                
-                                                pre_transform = t_mat @ empties[empty_idx].matrix_world.inverted() @ zoe_rot @ empties[empty_idx].matrix_world @ t_inv
-                                                
-                                                obj_to_transform.matrix_world = pre_transform @ obj_to_transform.matrix_world
-                                            
-                            baked_collection.objects.link(new_obj)
-                            baked_meshes.append(new_obj)
-                        except Exception:
-                            pass
+                                    offset_angle = k * (2 * math.pi / base_frames)
+                                    rot_mat = mathutils.Matrix.Rotation(rot_sign * (drift_angle - offset_angle), 4, 'Z')
+                                    zoe_rot = root_obj.matrix_world @ rot_mat @ root_obj.matrix_world.inverted()
+                                    
+                                    pre_transform = t_mat @ empties[empty_idx].matrix_world.inverted() @ zoe_rot @ empties[empty_idx].matrix_world @ t_inv
+                                    
+                                    obj_to_transform.matrix_world = pre_transform @ obj_to_transform.matrix_world
+                                    
+                # Unlink from imported collections and link to baked_collection
+                for col_old in list(new_obj.users_collection):
+                    col_old.objects.unlink(new_obj)
+                baked_collection.objects.link(new_obj)
                 
             if not baked_meshes:
                 continue
@@ -1229,7 +1245,7 @@ class OBJECT_OT_export_zoetrope_frames(bpy.types.Operator):
         return {'FINISHED'}
         
     def export_single_mapping(self, context, anim_col, target_zoetrope, mismatch_strategy, outdir):
-        empties = [obj for obj in target_zoetrope.all_objects if obj.name.startswith("Frame_") and obj.type == 'EMPTY']
+        empties = [obj for obj in target_zoetrope.all_objects if ("Frame_" in obj.name or "Slot" in obj.name) and obj.type == 'EMPTY']
         if not empties:
             self.report({'WARNING'}, f"No 'Frame_XXX' empties found in {target_zoetrope.name}!")
             return
@@ -1319,97 +1335,90 @@ class OBJECT_OT_export_zoetrope_frames(bpy.types.Operator):
                 
             context.scene.frame_set(int(target_fbx_frame))
             context.view_layer.update()
-            depsgraph = context.evaluated_depsgraph_get()
+            import tempfile
             
-            temp_objects = []
-            for m in exportable_objects:
-                for inst in depsgraph.object_instances:
-                    is_match = False
-                    if inst.object.original.name == m.name:
-                        is_match = True
-                    elif inst.parent and inst.parent.original.name == m.name:
-                        is_match = True
-                        
-                    if is_match and inst.object.type == 'MESH':
-                        try:
-                            eval_mesh = inst.object.to_mesh(preserve_all_data_layers=True, depsgraph=depsgraph)
-                            real_mesh = eval_mesh.copy()
-                            inst.object.to_mesh_clear()
-                            
-                            new_obj = bpy.data.objects.new(f"Temp_Export_{m.name}", real_mesh)
-                            
-                            template_obj = bpy.data.objects.get("Frame_Template")
-                            if template_obj:
-                                o_mat_inv = template_obj.matrix_world.inverted()
-                                new_obj.matrix_world = o_mat_inv @ inst.matrix_world.copy()
-                            else:
-                                new_obj.matrix_world = inst.matrix_world.copy()
-                                
-                            context.scene.collection.objects.link(new_obj)
-                            
-                            # Ensure vertex colors are active so OBJ exporter picks them up
-                            if hasattr(real_mesh, 'color_attributes') and real_mesh.color_attributes:
-                                if "PRINTCOLOR" not in real_mesh.color_attributes:
-                                    target_color = real_mesh.color_attributes.render_color or real_mesh.color_attributes.active_color or real_mesh.color_attributes[0]
-                                    if target_color:
-                                        target_color.name = "PRINTCOLOR"
-                                
-                                printcolor_attr = real_mesh.color_attributes.get("PRINTCOLOR")
-                                if printcolor_attr:
-                                    real_mesh.color_attributes.active_color = printcolor_attr
-                            elif hasattr(real_mesh, 'vertex_colors') and real_mesh.vertex_colors:
-                                if "PRINTCOLOR" not in real_mesh.vertex_colors:
-                                    target_color = real_mesh.vertex_colors.active or real_mesh.vertex_colors[0]
-                                    if target_color:
-                                        target_color.name = "PRINTCOLOR"
-                                        
-                                if "PRINTCOLOR" in real_mesh.vertex_colors:
-                                    real_mesh.vertex_colors.active_index = real_mesh.vertex_colors.keys().index("PRINTCOLOR") if "PRINTCOLOR" in real_mesh.vertex_colors.keys() else 0
-                                else:
-                                    real_mesh.vertex_colors.active_index = 0
-                            
-                            if hasattr(inst.object.data, 'materials'):
-                                for mat in inst.object.data.materials:
-                                    if mat and mat.name not in real_mesh.materials:
-                                        real_mesh.materials.append(mat)
-                                        
-                            temp_objects.append(new_obj)
-                        except Exception:
-                            pass
-                
-            if not temp_objects:
-                continue
-                
+            temp_dir = tempfile.gettempdir()
+            temp_obj_path = os.path.join(temp_dir, f"zoetrope_temp_export_{i}.obj")
+            
+            # 1. Select all valid objects to export
             bpy.ops.object.select_all(action='DESELECT')
-            for temp_obj in temp_objects:
-                temp_obj.select_set(True)
+            for m in exportable_objects:
+                m.hide_viewport = False
+                m.select_set(True)
                 
-            context.view_layer.objects.active = temp_objects[0]
+            # 2. Export them to temp OBJ to bake all modifiers and shape keys
+            bpy.ops.wm.obj_export(
+                filepath=temp_obj_path,
+                export_selected_objects=True,
+                export_uv=True,
+                export_normals=True,
+                export_colors=True,
+                export_materials=False,
+                export_triangulated_mesh=True,
+                export_animation=False,
+                apply_modifiers=True,
+                export_eval_mode='DAG_EVAL_VIEWPORT'
+            )
             
-            prefix = anim_col.name.replace(" ", "_")
-            out_path = os.path.join(outdir, f"{prefix}_frame_{i+1:03d}.obj")
-            
+            # 3. Import them back
+            bpy.ops.object.select_all(action='DESELECT')
             try:
-                try:
-                    # Blender 3.2+ new C++ exporter
-                    try:
-                        bpy.ops.wm.obj_export(filepath=out_path, export_selected_objects=True, export_colors=True, export_triangulated_mesh=True, up_axis=settings.export_up_axis, forward_axis=settings.export_forward_axis)
-                    except TypeError:
-                        # Fallback if export_colors or export_triangulated_mesh is unrecognized
-                        bpy.ops.wm.obj_export(filepath=out_path, export_selected_objects=True, up_axis=settings.export_up_axis, forward_axis=settings.export_forward_axis)
-                except AttributeError:
-                    # Fallback to old python exporter (pre-3.2)
-                    bpy.ops.export_scene.obj(filepath=out_path, use_selection=True, use_triangles=True, axis_up=settings.export_up_axis, axis_forward=settings.export_forward_axis)
-            except Exception as e:
-                self.report({'ERROR'}, f"Failed to export OBJ {out_path}: {e}")
-                print(f"Export Error: {e}")
+                bpy.ops.wm.obj_import(filepath=temp_obj_path)
+            except AttributeError:
+                bpy.ops.import_scene.obj(filepath=temp_obj_path)
                 
-            # Cleanup memory
-            temp_meshes = [obj.data for obj in temp_objects if obj.data]
-            for temp_obj in temp_objects:
-                bpy.data.objects.remove(temp_obj, do_unlink=True)
-            for mesh in temp_meshes:
-                bpy.data.meshes.remove(mesh, do_unlink=True)
+            imported_objects = context.selected_objects
+            
+            if imported_objects:
+                # 4. Apply template_obj transform
+                template_obj = bpy.data.objects.get("Frame_Template")
+                if template_obj:
+                    o_mat_inv = template_obj.matrix_world.inverted()
+                    for o in imported_objects:
+                        o.matrix_world = o_mat_inv @ o.matrix_world
+                
+                # 5. Join them
+                context.view_layer.objects.active = imported_objects[0]
+                if len(imported_objects) > 1:
+                    bpy.ops.object.join()
+                
+                final_obj = context.view_layer.objects.active
+                
+                # 6. Export to final out_path
+                prefix = anim_col.name.replace(" ", "_")
+                out_path = os.path.join(outdir, f"{prefix}_frame_{i+1:03d}.obj")
+                
+                bpy.ops.object.select_all(action='DESELECT')
+                final_obj.select_set(True)
+                
+                try:
+                    try:
+                        # Blender 3.2+ new C++ exporter
+                        try:
+                            bpy.ops.wm.obj_export(filepath=out_path, export_selected_objects=True, export_colors=True, export_triangulated_mesh=True, up_axis=settings.export_up_axis, forward_axis=settings.export_forward_axis)
+                        except TypeError:
+                            bpy.ops.wm.obj_export(filepath=out_path, export_selected_objects=True, up_axis=settings.export_up_axis, forward_axis=settings.export_forward_axis)
+                    except AttributeError:
+                        # Fallback to old python exporter
+                        bpy.ops.export_scene.obj(filepath=out_path, use_selection=True, use_triangles=True, axis_up=settings.export_up_axis, axis_forward=settings.export_forward_axis)
+                except Exception as e:
+                    self.report({'ERROR'}, f"Failed to export OBJ {out_path}: {e}")
+                    print(f"Export Error: {e}")
+                
+                # 7. Cleanup
+                final_mesh = final_obj.data
+                bpy.data.objects.remove(final_obj, do_unlink=True)
+                if final_mesh:
+                    bpy.data.meshes.remove(final_mesh, do_unlink=True)
+                
+            # Clean temp files
+            if os.path.exists(temp_obj_path):
+                try: os.remove(temp_obj_path)
+                except: pass
+            mtl_path = temp_obj_path.replace('.obj', '.mtl')
+            if os.path.exists(mtl_path):
+                try: os.remove(mtl_path)
+                except: pass
                     
             context.window_manager.progress_update(i + 1)
             
@@ -1465,7 +1474,7 @@ class OBJECT_OT_import_zoetrope_frames(bpy.types.Operator):
             self.report({'WARNING'}, f"No OBJs found for {anim_col.name} in {outdir}")
             return
             
-        empties = [obj for obj in target_zoetrope.all_objects if obj.name.startswith("Frame_") and obj.type == 'EMPTY']
+        empties = [obj for obj in target_zoetrope.all_objects if ("Frame_" in obj.name or "Slot" in obj.name) and obj.type == 'EMPTY']
         if not empties:
             self.report({'WARNING'}, f"No 'Frame_XXX' empties found in {target_zoetrope.name}!")
             return
@@ -1590,7 +1599,7 @@ class OBJECT_OT_import_raw_zoetrope_frames(bpy.types.Operator):
             self.report({'WARNING'}, f"No OBJ files found in {outdir}")
             return {'CANCELLED'}
             
-        empties = [obj for obj in zoe.all_objects if obj.name.startswith("Frame_") and obj.type == 'EMPTY']
+        empties = [obj for obj in zoe.all_objects if ("Frame_" in obj.name or "Slot" in obj.name) and obj.type == 'EMPTY']
         if not empties:
             self.report({'WARNING'}, f"No 'Frame_XXX' empties found in {zoe.name}!")
             return {'CANCELLED'}
@@ -1801,7 +1810,7 @@ class VIEW3D_PT_zoetrope_settings(bpy.types.Panel):
             outdir = bpy.path.abspath(settings.export_dir)
             if zoe and outdir and os.path.exists(outdir):
                 files = glob.glob(os.path.join(outdir, "*.obj"))
-                empties_count = sum(1 for obj in zoe.all_objects if obj.name.startswith("Frame_") and obj.type == 'EMPTY')
+                empties_count = sum(1 for obj in zoe.all_objects if ("Frame_" in obj.name or "Slot" in obj.name) and obj.type == 'EMPTY')
                 if len(files) != empties_count and len(files) > 0 and empties_count > 0:
                     box.label(text=f"Mismatch: {len(files)} OBJs vs {empties_count} frames", icon='ERROR')
                     box.prop(settings, "raw_mismatch_strategy")
@@ -1845,7 +1854,7 @@ class VIEW3D_PT_zoetrope_baker(bpy.types.Panel):
                     for obj in item.anim_collection.all_objects:
                         if obj.animation_data and obj.animation_data.action:
                             max_frame = max(max_frame, obj.animation_data.action.frame_range[1])
-                    empties_count = sum(1 for obj in item.target_zoetrope.all_objects if obj.name.startswith("Frame_") and obj.type == 'EMPTY')
+                    empties_count = sum(1 for obj in item.target_zoetrope.all_objects if ("Frame_" in obj.name or "Slot" in obj.name) and obj.type == 'EMPTY')
                     if int(max_frame) != empties_count and empties_count > 0 and max_frame > 0:
                         box.label(text=f"Mismatch: {int(max_frame)} anim vs {empties_count} frames", icon='ERROR')
                         box.prop(item, "mismatch_strategy")
@@ -1896,7 +1905,7 @@ class VIEW3D_PT_zoetrope_baker(bpy.types.Panel):
                             if obj.animation_data and obj.animation_data.action:
                                 max_frame = max(max_frame, obj.animation_data.action.frame_range[1])
                         
-                        empties_count = sum(1 for obj in item.target_zoetrope.all_objects if obj.name.startswith("Frame_") and obj.type == 'EMPTY')
+                        empties_count = sum(1 for obj in item.target_zoetrope.all_objects if ("Frame_" in obj.name or "Slot" in obj.name) and obj.type == 'EMPTY')
                         
                         if int(max_frame) != empties_count and empties_count > 0 and max_frame > 0:
                             map_box.label(text=f"Mismatch: {int(max_frame)} anim vs {empties_count} frames", icon='ERROR')
@@ -1994,7 +2003,7 @@ def register():
         update=update_live_settings
     )
     bpy.types.Collection.zoe_offset = bpy.props.FloatVectorProperty(
-        name="Global Offset",
+        name="Local Offset",
         default=(0.0, 0.0, 0.0),
         subtype='TRANSLATION',
         update=update_live_settings
