@@ -1359,10 +1359,16 @@ class OBJECT_OT_export_zoetrope_frames(bpy.types.Operator):
                 bpy.ops.object.convert(target='MESH')
                 
                 # Force PRINTCOLOR to be active if it exists
-                if new_m.data:
-                    for attr in new_m.data.color_attributes:
+                if new_m.data and hasattr(new_m.data, "color_attributes"):
+                    attr_index = -1
+                    for i, attr in enumerate(new_m.data.color_attributes):
                         if attr.name == 'PRINTCOLOR':
-                            new_m.data.color_attributes.active_color = attr
+                            attr_index = i
+                            break
+                    if attr_index != -1:
+                        new_m.data.color_attributes.active_color_index = attr_index
+                        new_m.data.color_attributes.render_color_index = attr_index
+                        new_m.data.attributes.active_color = new_m.data.attributes[attr_index]
                 
                 temp_objects.append(new_m)
                 
