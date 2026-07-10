@@ -1340,13 +1340,38 @@ class OBJECT_OT_export_zoetrope_frames(bpy.types.Operator):
             temp_dir = tempfile.gettempdir()
             temp_obj_path = os.path.join(temp_dir, f"zoetrope_temp_export_{i}.obj")
             
-            # 1. Select all valid objects to export
+            # 1. Select all valid objects to export and bake modifiers manually
             bpy.ops.object.select_all(action='DESELECT')
+            temp_objects = []
             for m in exportable_objects:
                 m.hide_viewport = False
+                
+                # Duplicate the object
+                new_m = m.copy()
+                new_m.data = m.data.copy()
+                context.collection.objects.link(new_m)
+                
+                context.view_layer.objects.active = new_m
+                bpy.ops.object.select_all(action='DESELECT')
+                new_m.select_set(True)
+                
+                # Bake modifiers (which preserves named attributes)
+                bpy.ops.object.convert(target='MESH')
+                
+                # Force PRINTCOLOR to be active if it exists
+                if new_m.data:
+                    for attr in new_m.data.color_attributes:
+                        if attr.name == 'PRINTCOLOR':
+                            new_m.data.color_attributes.active_color = attr
+                
+                temp_objects.append(new_m)
+                
+            # Select all temporary objects for export
+            bpy.ops.object.select_all(action='DESELECT')
+            for m in temp_objects:
                 m.select_set(True)
                 
-            # 2. Export them to temp OBJ to bake all modifiers and shape keys
+            # 2. Export them to temp OBJ to consolidate geometry
             bpy.ops.wm.obj_export(
                 filepath=temp_obj_path,
                 export_selected_objects=True,
@@ -1356,9 +1381,12 @@ class OBJECT_OT_export_zoetrope_frames(bpy.types.Operator):
                 export_materials=False,
                 export_triangulated_mesh=True,
                 export_animation=False,
-                apply_modifiers=True,
+                apply_modifiers=False,
                 export_eval_mode='DAG_EVAL_VIEWPORT'
             )
+            
+            # Clean up temp objects
+            bpy.ops.object.delete()
             
             # 3. Import them back
             bpy.ops.object.select_all(action='DESELECT')
