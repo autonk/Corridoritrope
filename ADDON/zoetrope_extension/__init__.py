@@ -30,7 +30,9 @@ GITHUB_USER = "autonk"
 GITHUB_REPO = "ZOETROPE-PROJECT"
 GITHUB_BRANCH = "main"
 GITHUB_FILE_PATH = "ADDON/zoetrope_generator_addon.py"
-GITHUB_TOKEN = "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"
+# Leave empty for public repos (requests go unauthenticated). Only set a
+# token if the repo is made private - and never commit a real token.
+GITHUB_TOKEN = ""
 # ========================================================================
 
 remote_info = {'checked': False, 'has_update': False, 'sha': None, 'date': None}
