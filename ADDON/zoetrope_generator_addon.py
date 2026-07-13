@@ -1049,11 +1049,13 @@ class OBJECT_OT_batch_zoetrope_baker(bpy.types.Operator):
             baked_collection = bpy.data.collections.new("Baked_Frames")
             target_zoetrope.children.link(baked_collection)
 
+        # Length of the animation in frames (custom ranges may not start at frame 1)
+        anim_frame_count = int(max_frame - start_frame + 1)
         if mismatch_strategy == 'CLIP':
-            if max_frame < num_empties:
-                # Too short: beginning is clipped (map to the LAST max_frame empties)
-                start_empty_idx = num_empties - int(max_frame)
-                loop_count = int(max_frame)
+            if anim_frame_count < num_empties:
+                # Too short: beginning is clipped (map to the LAST anim_frame_count empties)
+                start_empty_idx = num_empties - anim_frame_count
+                loop_count = anim_frame_count
             else:
                 # Too long: end is clipped (map to the FIRST num_empties)
                 start_empty_idx = 0
@@ -1298,10 +1300,12 @@ class OBJECT_OT_export_zoetrope_frames(bpy.types.Operator):
             
         depsgraph = context.evaluated_depsgraph_get()
 
+        # Length of the animation in frames (custom ranges may not start at frame 1)
+        anim_frame_count = int(max_frame - start_frame + 1)
         if mismatch_strategy == 'CLIP':
-            if max_frame < num_empties:
-                start_empty_idx = num_empties - int(max_frame)
-                loop_count = int(max_frame)
+            if anim_frame_count < num_empties:
+                start_empty_idx = num_empties - anim_frame_count
+                loop_count = anim_frame_count
             else:
                 start_empty_idx = 0
                 loop_count = num_empties
@@ -1359,16 +1363,18 @@ class OBJECT_OT_export_zoetrope_frames(bpy.types.Operator):
                 bpy.ops.object.convert(target='MESH')
                 
                 # Force PRINTCOLOR to be active if it exists
+                # NOTE: do not reuse `i` here - it is the frame index of the export loop
                 if new_m.data and hasattr(new_m.data, "color_attributes"):
                     attr_index = -1
-                    for i, attr in enumerate(new_m.data.color_attributes):
+                    for color_attr_idx, attr in enumerate(new_m.data.color_attributes):
                         if attr.name == 'PRINTCOLOR':
-                            attr_index = i
+                            attr_index = color_attr_idx
                             break
                     if attr_index != -1:
                         new_m.data.color_attributes.active_color_index = attr_index
                         new_m.data.color_attributes.render_color_index = attr_index
-                        new_m.data.attributes.active_color = new_m.data.attributes[attr_index]
+                        # Look up by name: indices in color_attributes don't match indices in attributes
+                        new_m.data.attributes.active_color = new_m.data.attributes['PRINTCOLOR']
                 
                 temp_objects.append(new_m)
                 
