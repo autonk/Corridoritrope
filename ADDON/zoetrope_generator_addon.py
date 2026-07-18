@@ -720,6 +720,12 @@ class ZoetropeMappingItem(bpy.types.PropertyGroup):
         default=24,
         min=1
     )
+    frameskip: bpy.props.IntProperty(
+        name="Frame Skip",
+        description="Number of frames to skip (e.g. 1 means skip 0 frames, 2 means skip every other)",
+        default=1,
+        min=1
+    )
 
 def get_zoetrope_rpm(self):
     fps = bpy.context.scene.render.fps / bpy.context.scene.render.fps_base
@@ -833,8 +839,14 @@ class ZoetropeGeneratorSettings(bpy.types.PropertyGroup):
         min=1
     )
     export_frame_end: bpy.props.IntProperty(
-        name="End",
+        name="Export End Frame",
         default=24,
+        min=1
+    )
+    export_frameskip: bpy.props.IntProperty(
+        name="Export Frame Skip",
+        description="Number of frames to skip during export",
+        default=1,
         min=1
     )
     raw_mismatch_strategy: bpy.props.EnumProperty(
@@ -1008,9 +1020,11 @@ class OBJECT_OT_batch_zoetrope_baker(bpy.types.Operator):
         if mapping_item and mapping_item.use_custom_frame_range:
             start_frame = mapping_item.frame_start
             max_frame = mapping_item.frame_end
+            frameskip = mapping_item.frameskip
         else:
             start_frame = 1
             max_frame = 0
+            frameskip = 1
             for obj in exportable_objects:
                 if obj.animation_data and obj.animation_data.action:
                     max_frame = max(max_frame, obj.animation_data.action.frame_range[1])
@@ -1072,7 +1086,8 @@ class OBJECT_OT_batch_zoetrope_baker(bpy.types.Operator):
             if mismatch_strategy == 'INTERPOLATE':
                 target_fbx_frame = start_frame + (i / max(1, loop_count - 1)) * (anim_length - 1)
             else:
-                target_fbx_frame = start_frame + i
+                # Use frameskip when not interpolating
+                target_fbx_frame = start_frame + (i * frameskip)
                 
             context.scene.frame_set(int(target_fbx_frame))
             context.view_layer.update()
@@ -1096,8 +1111,9 @@ class OBJECT_OT_batch_zoetrope_baker(bpy.types.Operator):
             
             bpy.ops.object.select_all(action='DESELECT')
             for m in exportable_objects:
-                m.hide_viewport = False
-                m.select_set(True)
+                if m.name in context.view_layer.objects:
+                    m.hide_viewport = False
+                    m.select_set(True)
                 
             bpy.ops.wm.obj_export(
                 filepath=temp_obj_path,
@@ -1311,7 +1327,7 @@ class OBJECT_OT_export_zoetrope_frames(bpy.types.Operator):
 
         settings = context.scene.zoetrope_generator
         if settings.use_export_frame_range:
-            loop_count = settings.export_frame_end - settings.export_frame_start + 1
+            loop_count = ((settings.export_frame_end - settings.export_frame_start) // max(1, settings.export_frameskip)) + 1
             
         context.window_manager.progress_begin(0, loop_count)
         
@@ -1321,7 +1337,7 @@ class OBJECT_OT_export_zoetrope_frames(bpy.types.Operator):
         import os
         for i in range(loop_count):
             if settings.use_export_frame_range:
-                target_fbx_frame = settings.export_frame_start + i
+                target_fbx_frame = settings.export_frame_start + (i * settings.export_frameskip)
             else:
                 empty_idx = start_empty_idx + i
                 if empty_idx >= num_empties:
@@ -1344,6 +1360,8 @@ class OBJECT_OT_export_zoetrope_frames(bpy.types.Operator):
             bpy.ops.object.select_all(action='DESELECT')
             temp_objects = []
             for m in exportable_objects:
+                if m.name not in context.view_layer.objects:
+                    continue
                 m.hide_viewport = False
                 
                 # Duplicate the object
@@ -1963,9 +1981,10 @@ class VIEW3D_PT_zoetrope_baker(bpy.types.Panel):
                             
                         map_box.prop(item, "use_custom_frame_range")
                         if item.use_custom_frame_range:
-                            row = map_box.row(align=True)
+                            row = map_box.row()
                             row.prop(item, "frame_start")
                             row.prop(item, "frame_end")
+                            row.prop(item, "frameskip")
                 
                 layout.separator()
                 row = layout.row()
@@ -1981,9 +2000,10 @@ class VIEW3D_PT_zoetrope_baker(bpy.types.Panel):
                 row_axis.prop(settings, "export_up_axis")
                 box.prop(settings, "use_export_frame_range")
                 if settings.use_export_frame_range:
-                    row = box.row(align=True)
+                    row = box.row()
                     row.prop(settings, "export_frame_start")
                     row.prop(settings, "export_frame_end")
+                    row.prop(settings, "export_frameskip")
                 row = box.row()
                 row.scale_y = 1.5
                 row.operator("object.export_zoetrope_frames", icon='MESH_DATA', text="Export Frames")

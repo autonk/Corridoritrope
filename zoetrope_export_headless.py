@@ -9,6 +9,11 @@ def main():
         sys.exit(1)
     argv = argv[argv.index("--") + 1:]
 
+    skip_every_other = False
+    if "--skip-every-other" in argv:
+        skip_every_other = True
+        argv.remove("--skip-every-other")
+
     outdir = argv[0] if len(argv) > 0 else ""
     if not outdir or not os.path.exists(outdir):
         print(f"PROGRESS: 0/1 Error: Invalid output directory {outdir}")
@@ -71,16 +76,18 @@ def main():
         actual_start = 1
         actual_end = max_frame
         
-    total_frames = max(1, (actual_end - actual_start) + 1)
-    print(f"Total Frames to Export: {total_frames} (Range: {actual_start} to {actual_end})")
+    step = 2 if skip_every_other else 1
+    frame_list = list(range(actual_start, actual_end + 1, step))
+    total_frames = len(frame_list)
+    print(f"Total Frames to Export: {total_frames} (Range: {actual_start} to {actual_end}, Step: {step})")
 
     depsgraph = bpy.context.evaluated_depsgraph_get()
 
     # Deselect all
     bpy.ops.object.select_all(action='DESELECT')
 
-    for i, frame in enumerate(range(actual_start, actual_end + 1)):
-        print(f"PROGRESS: {i}/{total_frames} Evaluating Frame {frame}...")
+    for i, frame in enumerate(frame_list):
+        print(f"PROGRESS: {i+1}/{total_frames} Evaluating Frame {frame}...")
         
         bpy.context.scene.frame_set(frame)
         bpy.context.view_layer.update()
@@ -143,7 +150,7 @@ def main():
             if temp_obj.data:
                 bpy.data.meshes.remove(temp_obj.data, do_unlink=True)
 
-    print(f"PROGRESS: {max_frame}/{max_frame} Finished!")
+    print(f"PROGRESS: {total_frames}/{total_frames} Finished!")
 
 if __name__ == "__main__":
     main()

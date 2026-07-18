@@ -42,6 +42,11 @@ class ZoetropeExporterApp(ctk.CTk):
         self.out_btn = ctk.CTkButton(self.out_frame, text="Browse", width=80, command=self.browse_out)
         self.out_btn.pack(side="right", padx=(0, 10), pady=10)
         
+        # Options
+        self.skip_frame_var = ctk.BooleanVar(value=False)
+        self.skip_frame_cb = ctk.CTkCheckBox(self, text="Skip Every Other Frame", variable=self.skip_frame_var)
+        self.skip_frame_cb.pack(pady=(0, 10))
+        
         # Progress and Status
         self.progress_bar = ctk.CTkProgressBar(self)
         self.progress_bar.pack(fill="x", padx=20, pady=(20, 5))
@@ -85,14 +90,18 @@ class ZoetropeExporterApp(ctk.CTk):
         self.status_label.configure(text="Starting Blender...", text_color="white")
         self.progress_bar.set(0)
         
-        # Run in a background thread so UI doesn't freeze
-        threading.Thread(target=self.run_blender_process, args=(blend, script_path, out), daemon=True).start()
+        skip = self.skip_frame_var.get()
         
-    def run_blender_process(self, blend, script, out):
+        # Run in a background thread so UI doesn't freeze
+        threading.Thread(target=self.run_blender_process, args=(blend, script_path, out, skip), daemon=True).start()
+        
+    def run_blender_process(self, blend, script, out, skip):
         try:
             # Assuming blender is in the system PATH. 
             # If not, users might need to specify the full path to blender.exe
             cmd = ["blender", "-b", blend, "--python", script, "--", out]
+            if skip:
+                cmd.append("--skip-every-other")
             
             # On windows, we might want to hide the console window creation for subprocess
             startupinfo = None
