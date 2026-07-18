@@ -27,8 +27,9 @@ GITHUB_REPO = "Zoetrope_Tools"
 GITHUB_BRANCH = "main"
 GITHUB_FILE_PATH = "ADDON/zoetrope_generator_addon.py"
 
-# Paste your Personal Access Token here
-GITHUB_TOKEN = "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"
+# Leave empty for public repos (requests go unauthenticated). Only paste a
+# token here if the repo is private - and never commit a real token.
+GITHUB_TOKEN = ""
 CORE_MODULE_NAME = "zoetrope_generator_addon"
 # ========================================================================
 
