@@ -119,6 +119,17 @@ def main():
                         new_mesh.color_attributes.active_color_index = attr_index
                         new_mesh.color_attributes.render_color_index = attr_index
                         new_mesh.attributes.active_color = new_mesh.attributes['PRINTCOLOR']
+                        
+                        # Convert to standard BYTE_COLOR on CORNER for OBJ compatibility
+                        old_active = bpy.context.view_layer.objects.active
+                        bpy.context.view_layer.objects.active = new_obj
+                        new_obj.select_set(True)
+                        try:
+                            bpy.ops.geometry.attribute_convert(mode='GENERIC', domain='CORNER', data_type='BYTE_COLOR')
+                        except Exception:
+                            pass
+                        bpy.context.view_layer.objects.active = old_active
+                        
                     except AttributeError:
                         pass
                 elif len(new_mesh.color_attributes) > 0:
