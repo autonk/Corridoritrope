@@ -104,16 +104,29 @@ def main():
             
             # Ensure materials are linked (some exporters need this to write MTL files correctly, though vertex colors may not need it)
             for mat in m.data.materials:
-                if mat.name not in new_mesh.materials:
+                if mat and mat.name not in new_mesh.materials:
                     new_mesh.materials.append(mat)
             
             # Force active vertex color / color attribute to ensure it exports every frame
-            if hasattr(new_mesh, 'color_attributes') and len(new_mesh.color_attributes) > 0:
-                try:
-                    new_mesh.color_attributes.active_color_index = 0
-                    new_mesh.color_attributes.render_color_index = 0
-                except AttributeError:
-                    pass
+            if hasattr(new_mesh, 'color_attributes'):
+                attr_index = -1
+                for color_attr_idx, attr in enumerate(new_mesh.color_attributes):
+                    if attr.name == 'PRINTCOLOR':
+                        attr_index = color_attr_idx
+                        break
+                if attr_index != -1:
+                    try:
+                        new_mesh.color_attributes.active_color_index = attr_index
+                        new_mesh.color_attributes.render_color_index = attr_index
+                        new_mesh.attributes.active_color = new_mesh.attributes['PRINTCOLOR']
+                    except AttributeError:
+                        pass
+                elif len(new_mesh.color_attributes) > 0:
+                    try:
+                        new_mesh.color_attributes.active_color_index = 0
+                        new_mesh.color_attributes.render_color_index = 0
+                    except AttributeError:
+                        pass
             elif hasattr(new_mesh, 'vertex_colors') and len(new_mesh.vertex_colors) > 0:
                 try:
                     new_mesh.vertex_colors.active_index = 0
@@ -136,7 +149,18 @@ def main():
         
         try:
             # Modern C++ exporter in Blender 3.2+ (supports vertex colors)
-            bpy.ops.wm.obj_export(filepath=out_path, export_selected_objects=True, export_vertex_colors=True)
+            bpy.ops.wm.obj_export(
+                filepath=out_path, 
+                export_selected_objects=True, 
+                export_colors=True,
+                export_uv=True,
+                export_normals=True,
+                export_materials=False,
+                export_triangulated_mesh=True,
+                export_animation=False,
+                apply_modifiers=False,
+                export_eval_mode='DAG_EVAL_VIEWPORT'
+            )
         except AttributeError:
             # Fallback to old python exporter
             try:

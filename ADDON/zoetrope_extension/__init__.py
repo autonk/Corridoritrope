@@ -1094,8 +1094,7 @@ class OBJECT_OT_batch_zoetrope_baker(bpy.types.Operator):
             
             bpy.ops.object.select_all(action='DESELECT')
             for m in exportable_objects:
-                if m.name in context.view_layer.objects:
-                    m.hide_viewport = False
+                if m.name in context.view_layer.objects and not m.hide_viewport:
                     m.select_set(True)
                 
             bpy.ops.wm.obj_export(
@@ -1346,8 +1345,7 @@ class OBJECT_OT_export_zoetrope_frames(bpy.types.Operator):
             # 1. Select all valid objects to export
             bpy.ops.object.select_all(action='DESELECT')
             for m in exportable_objects:
-                if m.name in context.view_layer.objects:
-                    m.hide_viewport = False
+                if m.name in context.view_layer.objects and not m.hide_viewport:
                     m.select_set(True)
                 
             # 2. Export them to temp OBJ to bake all modifiers and shape keys

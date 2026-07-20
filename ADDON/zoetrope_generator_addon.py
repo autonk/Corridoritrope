@@ -1115,8 +1115,7 @@ class OBJECT_OT_batch_zoetrope_baker(bpy.types.Operator):
             
             bpy.ops.object.select_all(action='DESELECT')
             for m in exportable_objects:
-                if m.name in context.view_layer.objects:
-                    m.hide_viewport = False
+                if m.name in context.view_layer.objects and not m.hide_viewport:
                     m.select_set(True)
                 
             bpy.ops.wm.obj_export(
@@ -1357,6 +1356,7 @@ class OBJECT_OT_export_zoetrope_frames(bpy.types.Operator):
                 
             context.scene.frame_set(int(target_fbx_frame))
             context.view_layer.update()
+            depsgraph = context.evaluated_depsgraph_get()
             import tempfile
             
             temp_dir = tempfile.gettempdir()
@@ -1368,19 +1368,25 @@ class OBJECT_OT_export_zoetrope_frames(bpy.types.Operator):
             for m in exportable_objects:
                 if m.name not in context.view_layer.objects:
                     continue
-                m.hide_viewport = False
                 
-                # Duplicate the object
-                new_m = m.copy()
-                new_m.data = m.data.copy()
+                # Support visibility-baked animations
+                if m.hide_viewport:
+                    continue
+                    
+                # Robustly evaluate geometry nodes / alembic caches
+                eval_m = m.evaluated_get(depsgraph)
+                new_mesh = bpy.data.meshes.new_from_object(eval_m, preserve_all_data_layers=True, depsgraph=depsgraph)
+                new_m = bpy.data.objects.new(m.name + "_temp", new_mesh)
+                new_m.matrix_world = m.matrix_world.copy()
+                
+                # Preserve materials
+                if m.data and hasattr(m.data, 'materials'):
+                    for mat in m.data.materials:
+                        if mat and mat.name not in new_mesh.materials:
+                            new_mesh.materials.append(mat)
+                            
                 context.collection.objects.link(new_m)
-                
                 context.view_layer.objects.active = new_m
-                bpy.ops.object.select_all(action='DESELECT')
-                new_m.select_set(True)
-                
-                # Bake modifiers (which preserves named attributes)
-                bpy.ops.object.convert(target='MESH')
                 
                 # Force PRINTCOLOR to be active if it exists
                 # NOTE: do not reuse `i` here - it is the frame index of the export loop
