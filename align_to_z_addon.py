@@ -63,8 +63,6 @@ class OBJECT_OT_align_selection_to_neg_z(bpy.types.Operator):
                 bpy.ops.object.mode_set(mode='OBJECT')
             return {'CANCELLED'}
 
-        bpy.ops.object.mode_set(mode='OBJECT')
-        
         mat = obj.matrix_world.copy()
         world_center = mat @ avg_center
         world_normal = (mat.to_3x3() @ avg_normal).normalized()
@@ -77,12 +75,17 @@ class OBJECT_OT_align_selection_to_neg_z(bpy.types.Operator):
         target_pos = mathutils.Vector((world_center.x, world_center.y, 0.0))
         trans_back = mathutils.Matrix.Translation(target_pos)
         
-        obj.matrix_world = trans_back @ rot_mat @ trans_origin @ obj.matrix_world
+        world_transform = trans_back @ rot_mat @ trans_origin
+        local_transform = mat.inverted() @ world_transform @ mat
         
-        if is_edit_mode:
-            bpy.ops.object.mode_set(mode='EDIT')
+        bm.transform(local_transform)
+        bmesh.update_edit_mesh(obj.data)
+        obj.data.update()
+        
+        if not is_edit_mode:
+            bpy.ops.object.mode_set(mode='OBJECT')
             
-        self.report({'INFO'}, f"Successfully aligned object! New center at {target_pos}")
+        self.report({'INFO'}, f"Successfully aligned geometry in Edit Mode! New center at {target_pos}")
         return {'FINISHED'}
 
 class OBJECT_OT_export_subcollections_obj(bpy.types.Operator):
