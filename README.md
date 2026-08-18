@@ -2,7 +2,7 @@
   <img src="images/Demo.png" alt="Zoetrope Preview" width="100%" style="border-radius: 12px; box-shadow: 0 4px 8px rgba(0,0,0,0.5);">
   <br><br>
   
-  # ðŸŒ€ Zoetrope Generator Pro
+  # Zoetrope Generator
   *Breathe life into your 3D models with interlocking planetary gears and seamless looping magic.*
   <br>
 
@@ -12,11 +12,11 @@
 
 ---
 
-## ðŸš€ Unleash the Power of Illusion
+## Unleash the Power of Illusion
 
-**Zoetrope Generator Pro** is the ultimate toolset for Blender, designed to effortlessly turn any animation loop into a spectacular physical or digital zoetrope. Forget the manual mathâ€”let the power of automated planetary gear generation take the wheel.
+**Zoetrope Generator** is the ultimate toolset for Blender, designed to effortlessly turn any animation loop into a spectacular physical or digital zoetrope. Forget the manual mathâ€”let the power of automated planetary gear generation take the wheel.
 
-### âœ¨ Features
+### Features
 - **One-Click Generation**: Automate the creation of physical zoetrope bases with precise planetary gear integration.
 - **Dynamic Speed Control**: Counteract multi-speeds, set exact revolution frames, and watch the math solve itself.
 - **Object Alignment**: Instantly align all instances to the Z-axis for perfect physical printing.
@@ -32,11 +32,11 @@
 
 ---
 
-## ðŸ› ï¸ Installation
+## Installation
 
 This add-on is fully compatible with Blender 4.2+ and uses the new Extensions architecture.
 
-1. Download [`zoetrope_generator_pro.zip`](zoetrope_generator_pro.zip).
+1. Download [`zoetrope_generator.zip`](zoetrope_generator.zip).
 2. Open Blender and go to **Edit > Preferences > Get Extensions**.
 3. Click the dropdown arrow in the top right and select **Install from Disk...**
 4. Select the downloaded `.zip` file.
@@ -44,7 +44,7 @@ This add-on is fully compatible with Blender 4.2+ and uses the new Extensions ar
 
 ---
 
-## âš ï¸ Disclaimer: Vibecoded & Scrappy
+## Disclaimer: Vibecoded & Scrappy
 
 This project was heavily "vibecoded" and put together in a very scrappy way. Things might be broken, bugs may appear, and the code might not be pretty!
 

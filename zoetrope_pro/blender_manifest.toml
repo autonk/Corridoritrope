@@ -1,8 +1,8 @@
 schema_version = "1.0.0"
 
-id = "zoetrope_generator_pro"
+id = "zoetrope_generator"
 version = "1.2.0"
-name = "Zoetrope Generator Pro"
+name = "Zoetrope Generator"
 tagline = "Auto-updating toolkit for Zoetrope Generation"
 maintainer = "Community"
 type = "add-on"
