@@ -44,12 +44,8 @@ This add-on is fully compatible with Blender 4.2+ and uses the new Extensions ar
 
 ---
 
-## 📚 Documentation & Theory
+## ⚠️ Disclaimer: Vibecoded & Scrappy
 
-Ever wondered how the math works for generating these complex spinning mechanisms? Check out our detailed findings and equations:
+This project was heavily "vibecoded" and put together in a very scrappy way. Things might be broken, bugs may appear, and the code might not be pretty!
 
-> 📖 **[Read the Planetary Gear White Paper here](Planetary_Gear_White_Paper.pdf)**
-
----
-
-
+We highly encourage you to **branch**, **fork**, and hack on this! If you want to fix things, improve the UI, or add new features, please feel free to do so.
