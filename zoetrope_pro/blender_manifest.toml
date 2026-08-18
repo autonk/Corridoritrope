@@ -1,0 +1,15 @@
+schema_version = "1.0.0"
+
+id = "zoetrope_generator_pro"
+version = "1.2.0"
+name = "Zoetrope Generator Pro"
+tagline = "Auto-updating toolkit for Zoetrope Generation"
+maintainer = "Corridor Crew"
+type = "add-on"
+website = "https://github.com/autonk/ZOETROPE-PROJECT"
+
+blender_version_min = "4.2.0"
+
+license = [
+  "SPDX:GPL-3.0-or-later"
+]
