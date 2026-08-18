@@ -1,8 +1,8 @@
-<div align="center">
+﻿<div align="center">
   <img src="images/Demo.png" alt="Zoetrope Preview" width="100%" style="border-radius: 12px; box-shadow: 0 4px 8px rgba(0,0,0,0.5);">
   <br><br>
   
-  # 🌀 Zoetrope Generator Pro
+  # ðŸŒ€ Zoetrope Generator Pro
   *Breathe life into your 3D models with interlocking planetary gears and seamless looping magic.*
   <br>
 
@@ -12,11 +12,11 @@
 
 ---
 
-## 🚀 Unleash the Power of Illusion
+## ðŸš€ Unleash the Power of Illusion
 
-**Zoetrope Generator Pro** is the ultimate toolset for Blender, designed to effortlessly turn any animation loop into a spectacular physical or digital zoetrope. Forget the manual math—let the power of automated planetary gear generation take the wheel.
+**Zoetrope Generator Pro** is the ultimate toolset for Blender, designed to effortlessly turn any animation loop into a spectacular physical or digital zoetrope. Forget the manual mathâ€”let the power of automated planetary gear generation take the wheel.
 
-### ✨ Features
+### âœ¨ Features
 - **One-Click Generation**: Automate the creation of physical zoetrope bases with precise planetary gear integration.
 - **Dynamic Speed Control**: Counteract multi-speeds, set exact revolution frames, and watch the math solve itself.
 - **Object Alignment**: Instantly align all instances to the Z-axis for perfect physical printing.
@@ -32,7 +32,7 @@
 
 ---
 
-## 🛠️ Installation
+## ðŸ› ï¸ Installation
 
 This add-on is fully compatible with Blender 4.2+ and uses the new Extensions architecture.
 
@@ -44,8 +44,9 @@ This add-on is fully compatible with Blender 4.2+ and uses the new Extensions ar
 
 ---
 
-## ⚠️ Disclaimer: Vibecoded & Scrappy
+## âš ï¸ Disclaimer: Vibecoded & Scrappy
 
 This project was heavily "vibecoded" and put together in a very scrappy way. Things might be broken, bugs may appear, and the code might not be pretty!
 
-We highly encourage you to **branch**, **fork**, and hack on this! If you want to fix things, improve the UI, or add new features, please feel free to do so.
+I highly encourage you to **branch**, **fork**, and hack on this! If you want to fix things, improve the UI, or add new features, please feel free to do so.
+
