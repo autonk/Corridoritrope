@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="images/zoetrope_preview.jpg" alt="Zoetrope Preview" width="100%" style="border-radius: 12px; box-shadow: 0 4px 8px rgba(0,0,0,0.5);">
+  <img src="images/Demo.png" alt="Zoetrope Preview" width="100%" style="border-radius: 12px; box-shadow: 0 4px 8px rgba(0,0,0,0.5);">
   <br><br>
   
   # 🌀 Zoetrope Generator Pro
@@ -7,9 +7,8 @@
   <br>
 
   [![Blender Extension](https://img.shields.io/badge/Blender-4.2+-orange.svg?style=for-the-badge&logo=blender)](https://www.blender.org/)
-  [![License](https://img.shields.io/badge/License-GPL_3.0-blue.svg?style=for-the-badge)](https://opensource.org/licenses/GPL-3.0)
-  [![Corridor Crew](https://img.shields.io/badge/By-Corridor_Crew-black.svg?style=for-the-badge)](https://www.youtube.com/corridorcrew)
-</div>
+  [![License: Unlicense](https://img.shields.io/badge/license-Unlicense-blue.svg)](http://unlicense.org/)
+  </div>
 
 ---
 
@@ -26,7 +25,7 @@
 <br>
 
 <div align="center">
-  <img src="images/zoetrope_ui_mockup.jpg" alt="UI Mockup" width="85%" style="border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.8);">
+  <img src="images/UI.png" alt="UI Mockup" width="85%" style="border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.8);">
 </div>
 
 <br>
@@ -53,6 +52,4 @@ Ever wondered how the math works for generating these complex spinning mechanism
 
 ---
 
-<div align="center">
-  <i>Created with 🤍 by the Corridor Crew</i>
-</div>
+
