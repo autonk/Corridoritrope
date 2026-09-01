@@ -46,7 +46,7 @@ This add-on is fully compatible with Blender 4.2+ and uses the new Extensions ar
 
 ## Disclaimer: Vibecoded & Scrappy
 
-This project was heavily "vibecoded" and put together in a very scrappy way. Things might be broken, bugs may appear, and the code might not be pretty!
+This project was vibecoded and put together in a very scrappy way. Things might be broken, bugs may appear, and the code might not be pretty
 
-I highly encourage you to **branch**, **fork**, and hack on this! If you want to fix things, improve the UI, or add new features, please feel free to do so.
+I highly encourage you to **branch** and **fork** this!
 
